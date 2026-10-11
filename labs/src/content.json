@@ -1,0 +1,937 @@
+{
+  "checked": "11 October 2026",
+  "sql": {
+    "connect": "SELECT current_user() AS learner, current_catalog() AS catalog, current_schema() AS schema;\nSHOW CATALOGS;",
+    "schema": "CREATE SCHEMA IF NOT EXISTS {{NS}};",
+    "seed": "CREATE TABLE IF NOT EXISTS {{RAW}}\nUSING DELTA AS\nSELECT CAST(loan_id AS STRING) AS loan_id,\n       CAST(balance AS DECIMAL(12,2)) AS balance,\n       CAST(state AS STRING) AS state,\n       CAST(status AS STRING) AS status\nFROM VALUES\n ('L001',250000,'VA','Current'),\n ('L002',180000,'FL','Current'),\n ('L003',300000,'VA','Delinquent'),\n ('L004',125000,'NJ','Current'),\n ('L005',0,'NJ','Paid'),\n ('L006',150000,'FL','Current'),\n ('L007',210000,'VA','Delinquent'),\n ('L008',500000,'VA','Current'),\n ('L009',NULL,'VA','Current'),\n ('L010',-500,'FL','Current'),\n ('L011',100000,'ZZ','Current'),\n ('L012',75000,'NJ','Unknown')\nAS v(loan_id,balance,state,status);\n\nSELECT COUNT(*) AS rows_created FROM {{RAW}};",
+    "profile": "SELECT COUNT(*) AS total_rows,\n       COUNT(DISTINCT loan_id) AS unique_loans,\n       COUNT(balance) AS balances_present,\n       SUM(CASE WHEN balance IS NULL THEN 1 ELSE 0 END) AS missing_balances\nFROM {{RAW}};",
+    "score": "CREATE OR REPLACE VIEW {{SCORE}} AS\nSELECT COUNT(*) AS assessed,\n       SUM(CASE WHEN quality_result = 'PASS' THEN 1 ELSE 0 END) AS accepted,\n       SUM(CASE WHEN quality_result <> 'PASS' THEN 1 ELSE 0 END) AS rejected,\n       ROUND(100.0 * SUM(CASE WHEN quality_result = 'PASS' THEN 1 ELSE 0 END)\n             / NULLIF(COUNT(*), 0), 1) AS pass_pct\nFROM {{CHECKED}};\n\nSELECT * FROM {{SCORE}};",
+    "comment": "COMMENT ON TABLE {{RAW}} IS 'Synthetic governance lab. Metadata sync marker GOV_A. One row per loan.';\nCOMMENT ON COLUMN {{RAW}}.balance IS 'Outstanding principal in USD for this exercise; present and nonnegative.';",
+    "dashboard_exceptions": "SELECT loan_id, balance, state, status, quality_result\nFROM {{EXCEPTIONS}} ORDER BY loan_id;",
+    "history": "DESCRIBE HISTORY {{RAW}};",
+    "inspect": "DESCRIBE TABLE {{RAW}};\nDESCRIBE DETAIL {{RAW}};",
+    "raw_inventory": "SELECT table_catalog, table_schema, table_name, table_type, table_owner, comment\nFROM {{CAT}}.information_schema.tables\nWHERE LOWER(table_schema) = LOWER('{{SCHEMA_TEXT}}')\n  AND LOWER(table_name) = '{{RAW_NAME}}';",
+    "columns": "SELECT table_catalog, table_schema, table_name, column_name, ordinal_position,\n       data_type, is_nullable, comment\nFROM {{CAT}}.information_schema.columns\nWHERE LOWER(table_schema) = LOWER('{{SCHEMA_TEXT}}')\n  AND LOWER(table_name) = '{{RAW_NAME}}'\nORDER BY ordinal_position;",
+    "governed": "CREATE OR REPLACE VIEW {{CHECKED}} AS\nSELECT *, CASE\n  WHEN balance IS NULL THEN 'Missing balance'\n  WHEN balance < 0 THEN 'Negative balance'\n  WHEN state IS NULL OR state NOT IN ('VA','FL','NJ') THEN 'Invalid state'\n  WHEN status IS NULL OR status NOT IN ('Current','Delinquent','Paid') THEN 'Invalid status'\n  ELSE 'PASS' END AS quality_result\nFROM {{RAW}};\n\nCREATE OR REPLACE VIEW {{ACCEPTED}} AS\nSELECT loan_id, balance, state, status FROM {{CHECKED}} WHERE quality_result='PASS';\n\nCREATE OR REPLACE VIEW {{EXCEPTIONS}} AS\nSELECT * FROM {{CHECKED}} WHERE quality_result <> 'PASS';\n\nSELECT COUNT(*) AS exceptions FROM {{EXCEPTIONS}};",
+    "state_summary": "-- Replaces only this guide's named training summary table.\nCREATE OR REPLACE TABLE {{SUMMARY}} USING DELTA AS\nSELECT state, COUNT(*) AS accepted_loans, SUM(balance) AS total_balance\nFROM {{ACCEPTED}} GROUP BY state;\n\nSELECT * FROM {{SUMMARY}} ORDER BY state;",
+    "trace_change": "-- Change only L001 in the synthetic table created in Day 1.\nUPDATE {{RAW}} SET balance=-100 WHERE loan_id='L001';\nSELECT * FROM {{SCORE}};\nSELECT * FROM {{SUMMARY}} ORDER BY state;",
+    "trace_repair": "UPDATE {{RAW}} SET balance=250000 WHERE loan_id='L001';\n\nCREATE OR REPLACE TABLE {{SUMMARY}} USING DELTA AS\nSELECT state, COUNT(*) AS accepted_loans, SUM(balance) AS total_balance\nFROM {{ACCEPTED}} GROUP BY state;\n\nSELECT * FROM {{SCORE}};\nSELECT SUM(total_balance) AS accepted_balance FROM {{SUMMARY}};",
+    "grants": "SHOW GRANTS ON CATALOG {{CAT}};\nSHOW GRANTS ON SCHEMA {{NS}};\nSHOW GRANTS ON TABLE {{RAW}};",
+    "projection": "-- A projection exercise; it does not grant or revoke anyone's access.\nCREATE OR REPLACE VIEW {{CONSUMER}} AS\nSELECT loan_id, state FROM {{ACCEPTED}} WHERE state='VA';\n\nSELECT * FROM {{CONSUMER}} ORDER BY loan_id;\nSELECT COUNT(*) AS visible_rows FROM {{CONSUMER}};",
+    "marker": "-- Update metadata only on your synthetic lab table.\nCOMMENT ON TABLE {{RAW}} IS 'Synthetic governance lab. Metadata sync marker GOV_B. One row per loan.';\n\nSELECT table_name, comment\nFROM {{CAT}}.information_schema.tables\nWHERE LOWER(table_schema)=LOWER('{{SCHEMA_TEXT}}') AND LOWER(table_name)='{{RAW_NAME}}';",
+    "audit": "-- Optional: requires approved access to system.access.audit.\nSELECT event_time, service_name, action_name, request_id\nFROM system.access.audit\nWHERE event_date >= date_sub(current_date(), 1)\n  AND user_identity.email = current_user()\nORDER BY event_time DESC\nLIMIT 20;",
+    "final_check": "SELECT * FROM {{SCORE}};\nSELECT COUNT(*) AS summary_rows, SUM(accepted_loans) AS accepted_loans,\n       SUM(total_balance) AS accepted_balance FROM {{SUMMARY}};\nSELECT COUNT(*) AS consumer_rows FROM {{CONSUMER}};"
+  },
+  "sources": {
+    "sql": [
+      "SQL editor",
+      "https://docs.databricks.com/aws/en/sql/user/sql-editor/write-queries"
+    ],
+    "table": [
+      "Table creation and privileges",
+      "https://docs.databricks.com/aws/en/getting-started/create-table"
+    ],
+    "schema": [
+      "Create a schema",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-schema"
+    ],
+    "delta": [
+      "Create a Delta table",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-table-using"
+    ],
+    "view": [
+      "Create a view",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-view"
+    ],
+    "comment": [
+      "Table and column comments",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-comment"
+    ],
+    "lineage": [
+      "Unity Catalog lineage",
+      "https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-lineage"
+    ],
+    "dashboard": [
+      "Create a dashboard",
+      "https://docs.databricks.com/aws/en/dashboards/tutorials/create-dashboard"
+    ],
+    "jobs": [
+      "SQL tasks in Jobs",
+      "https://docs.databricks.com/aws/en/jobs/tasks/sql"
+    ],
+    "inventory": [
+      "Table inventory reference",
+      "https://docs.databricks.com/aws/en/sql/language-manual/information-schema/tables"
+    ],
+    "history": [
+      "Table history",
+      "https://docs.databricks.com/aws/en/tables/history"
+    ],
+    "collibra": [
+      "Configure a Unity Catalog integration",
+      "https://productresources.collibra.com/docs/collibra/latest/Content/Catalog/Databricks/co_edge-integrate-databricks.htm"
+    ],
+    "privileges": [
+      "Inspect Unity Catalog privileges",
+      "https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/"
+    ],
+    "columns": [
+      "Column inventory reference",
+      "https://docs.databricks.com/aws/en/sql/language-manual/information-schema/columns"
+    ],
+    "sharing": [
+      "Sharing concepts and supported paths",
+      "https://docs.databricks.com/aws/en/opensharing"
+    ],
+    "collibraAssets": [
+      "Integrated asset types",
+      "https://productresources.collibra.com/docs/collibra/latest/Content/Catalog/Databricks/ref_synchronized-databricks-data.htm"
+    ],
+    "collibraLineage": [
+      "Set up Unity Catalog technical lineage",
+      "https://productresources.collibra.com/docs/collibra/latest/Content/CollibraDataLineage/DataSources/DatabricksUnityCatalog/ta_databricks-add-capability.htm"
+    ],
+    "audit": [
+      "Audit log system table",
+      "https://docs.databricks.com/aws/en/admin/system-tables/audit-logs"
+    ]
+  },
+  "days": [
+    {
+      "id": 1,
+      "title": "Find and model your data",
+      "time": "40–55 min",
+      "feature": "Catalog + SQL warehouse",
+      "win": "One synthetic table, with its structure explained.",
+      "steps": [
+        {
+          "id": "1-1",
+          "title": "Find your starting point",
+          "where": "Databricks → SQL Editor",
+          "do": [
+            "Create a query and choose an approved SQL warehouse.",
+            "Run the statements separately; identify the approved Unity Catalog catalog.",
+            "Keep the warehouse and catalog names in your private notes."
+          ],
+          "look": "A successful query and at least one approved catalog.",
+          "why": "The editor holds the query; compute executes it; the catalog organizes the assets.",
+          "code": "connect",
+          "check": [],
+          "help": "Ask the sandbox owner for CAN USE on approved compute and a writable Unity Catalog schema. A visible menu alone does not grant access.",
+          "refs": [
+            "sql"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "1-2",
+          "title": "Reserve a clean lab space",
+          "where": "This guide → My sandbox",
+          "do": [
+            "Enter your approved catalog, schema, and a unique prefix.",
+            "Select “Use existing schema” if one was supplied.",
+            "Run the schema statement only when creating an approved personal schema."
+          ],
+          "look": "A writable schema with names saved in this guide.",
+          "why": "A separate prefix keeps these exercises apart from other sandbox work.",
+          "code": "schema",
+          "check": [],
+          "help": "If CREATE SCHEMA is blocked, use a supplied writable schema. The platform owner must already have configured managed storage.",
+          "refs": [
+            "schema"
+          ],
+          "extra": "",
+          "action": "settings"
+        },
+        {
+          "id": "1-3",
+          "title": "Create your synthetic fixture",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Run the seed once in your lab namespace.",
+            "Save the query as “Governance lab — seed”.",
+            "Find L009–L012; they contain the four deliberate defects."
+          ],
+          "look": "rows_created = 12.",
+          "why": "A known fixture gives you repeatable expected results for later tests.",
+          "code": "seed",
+          "check": [
+            [
+              "rows_created",
+              12
+            ]
+          ],
+          "help": "IF NOT EXISTS preserves an existing table. If a prior table has different data, choose a fresh prefix instead of overwriting it.",
+          "refs": [
+            "delta"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "1-4",
+          "title": "Separate an asset from its storage",
+          "where": "Catalog → your raw-loans table",
+          "do": [
+            "Run DESCRIBE TABLE and DESCRIBE DETAIL separately.",
+            "Find the four columns, Delta format, and storage location. Observe only.",
+            "Write the address as catalog → schema → table → column."
+          ],
+          "look": "Four columns: loan_id, balance, state, status. DESCRIBE DETAIL reports Delta.",
+          "why": "A catalog entry and its underlying files describe different parts of the same asset.",
+          "code": "inspect",
+          "check": [],
+          "help": "If DETAIL is unavailable, record what Catalog shows and the blocked command. A managed-table location may look different from an external-table location.",
+          "refs": [
+            "table"
+          ],
+          "extra": "This inventory covers registered, visible assets. It does not prove that every file in an S3 bucket or every source database has been discovered.",
+          "action": null
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Make the asset discoverable",
+      "time": "40–55 min",
+      "feature": "Metadata + glossary + asset model",
+      "win": "A small, reviewable metadata contract.",
+      "steps": [
+        {
+          "id": "2-1",
+          "title": "Add a useful definition",
+          "where": "SQL Editor → your lab namespace",
+          "do": [
+            "Run the table and column comments.",
+            "Open the table in Catalog and find GOV_A in its description.",
+            "Read the balance description as if you had never seen the table."
+          ],
+          "look": "The table has GOV_A; balance has units and a rule.",
+          "why": "A useful definition communicates grain, meaning, and scope before someone queries data.",
+          "code": "comment",
+          "check": [],
+          "help": "Refresh Catalog. If metadata edits are denied, capture the missing permission; continue with a draft definition.",
+          "refs": [
+            "comment"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "2-2",
+          "title": "Export one table's inventory",
+          "where": "SQL Editor → result grid",
+          "do": [
+            "Run the filtered table-inventory query.",
+            "Export the result CSV to an approved location.",
+            "Find its type, technical owner, and comment."
+          ],
+          "look": "Exactly one matching raw-table row.",
+          "why": "A reproducible inventory is easier to reconcile than a screenshot of a catalog tree.",
+          "code": "raw_inventory",
+          "check": [
+            [
+              "Matching table rows",
+              1
+            ]
+          ],
+          "help": "Check the exact catalog/schema/prefix. Metadata visibility is permission-scoped; an empty result does not establish that an object does not exist.",
+          "refs": [
+            "inventory"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "2-3",
+          "title": "Validate the column model",
+          "where": "SQL Editor → result grid",
+          "do": [
+            "Run the column-inventory query; export its CSV.",
+            "Count columns and compare names/types with Catalog.",
+            "Check whether nullable metadata matches what you observed in the data."
+          ],
+          "look": "Four ordered columns. Nullable metadata alone does not define your business rules.",
+          "why": "Asset-model validation checks both structure and relationships, not only a table count.",
+          "code": "columns",
+          "check": [
+            [
+              "Column rows",
+              4
+            ]
+          ],
+          "help": "Use the full table address to avoid matching a table of the same name elsewhere.",
+          "refs": [
+            "columns"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "2-4",
+          "title": "Map the technical fields to business terms",
+          "where": "Download → mapping worksheet",
+          "do": [
+            "Download the four-field mapping draft.",
+            "Review definition, grain, unit, and example rule for each field.",
+            "In private notes, assign a business reviewer role and mark terms draft until approved."
+          ],
+          "look": "Four proposed mappings; a technical column remains distinct from its business term.",
+          "why": "Collibra context becomes useful when technical assets point to reviewed business meaning.",
+          "code": null,
+          "check": [],
+          "help": "The worksheet is a draft, not a Collibra import template. Your asset types, relations, and required fields depend on configuration.",
+          "refs": [
+            "collibraAssets"
+          ],
+          "extra": "Use the real integration's asset mapping when available. Record the intended catalog/schema/table/column relationships without assuming every product uses identical labels.",
+          "action": "mapping"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Turn defects into a report",
+      "time": "45–60 min",
+      "feature": "Profiling + explicit quality rules",
+      "win": "A reusable exception list and a quality score.",
+      "steps": [
+        {
+          "id": "3-1",
+          "title": "Measure before changing data",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Run the profile query.",
+            "Compare total rows, distinct IDs, and balances present.",
+            "Find the one missing balance in the raw table."
+          ],
+          "look": "12 total rows; 12 unique loans; 11 balances present; 1 missing.",
+          "why": "Profiling describes the data. Business owners still decide what makes it acceptable.",
+          "code": "profile",
+          "check": [
+            [
+              "total_rows",
+              12
+            ],
+            [
+              "missing_balances",
+              1
+            ]
+          ],
+          "help": "If totals differ, verify you selected this guide's seed table and have not yet run the Day 4 defect.",
+          "refs": [
+            "sql"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "3-2",
+          "title": "Make failures explainable",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Run the view definitions in order.",
+            "Read the exception rows: missing balance, negative balance, invalid state, invalid status.",
+            "Keep the raw data intact."
+          ],
+          "look": "exceptions = 4; the accepted view contains 8 rows.",
+          "why": "Views make a repeatable rule and its exceptions available to other users.",
+          "code": "governed",
+          "check": [
+            [
+              "exceptions",
+              4
+            ]
+          ],
+          "help": "CREATE TABLE on the schema is also used for creating views. If a base table is missing, complete Day 1 first.",
+          "refs": [
+            "view"
+          ],
+          "extra": "Rules here are illustrative: allowed states VA/FL/NJ and statuses Current/Delinquent/Paid. CASE reports the first failing rule per row, not every defect.",
+          "action": null
+        },
+        {
+          "id": "3-3",
+          "title": "Build a score with a denominator",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Create the scorecard view.",
+            "Read assessed, accepted, rejected, and pass_pct together.",
+            "Explain why 66.7% is meaningful only with this population and these rules."
+          ],
+          "look": "12 assessed; 8 accepted; 4 rejected; pass_pct = 66.7.",
+          "why": "A percentage without its rule scope can mislead a governance review.",
+          "code": "score",
+          "check": [
+            [
+              "pass_pct",
+              66.7
+            ]
+          ],
+          "help": "Empty inputs produce a NULL percentage. This lab expects all 12 seeded rows.",
+          "refs": [
+            "view"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "3-4",
+          "title": "Keep a small report",
+          "where": "SQL Editor → saved queries",
+          "do": [
+            "Save the scorecard query and the exception query below.",
+            "Export the four-row exception result.",
+            "Optional: use the foundation guide's Day 5 to add a dashboard."
+          ],
+          "look": "A saved scorecard query and an export with four exceptions.",
+          "why": "The useful output is a repeatable report that someone can act on.",
+          "code": "dashboard_exceptions",
+          "check": [
+            [
+              "Exception rows",
+              4
+            ]
+          ],
+          "help": "A saved query is enough for this day's deliverable if dashboards are blocked.",
+          "refs": [
+            "sql"
+          ],
+          "extra": "Record the rule version and observation time privately. This is manual SQL profiling; it does not demonstrate a separately configured monitoring product.",
+          "action": null
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Trace impact and repair it",
+      "time": "45–60 min",
+      "feature": "Table + column lineage",
+      "win": "A before/after lineage and impact demonstration.",
+      "steps": [
+        {
+          "id": "4-1",
+          "title": "Create a downstream table",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Build the state-summary table from the accepted view.",
+            "Inspect the three state rows.",
+            "Find the path raw → checked → accepted → summary in the SQL."
+          ],
+          "look": "FL: 2 loans / 330000; NJ: 2 / 125000; VA: 4 / 1260000.",
+          "why": "Named transformations give lineage a concrete dependency to capture.",
+          "code": "state_summary",
+          "check": [
+            [
+              "Summary rows",
+              3
+            ]
+          ],
+          "help": "This command replaces only the lab's named summary. Choose a unique prefix and review the destination before running.",
+          "refs": [
+            "lineage"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "4-2",
+          "title": "Inspect the captured lineage",
+          "where": "Catalog → state-summary table → Lineage",
+          "do": [
+            "Open the lineage graph and expand upstream nodes.",
+            "Select total_balance and look for its connection to balance.",
+            "Retain the graph evidence, or record exactly what is masked/missing."
+          ],
+          "look": "A visible captured dependency, with table-level and column-level findings recorded separately.",
+          "why": "Lineage helps you identify who could be affected before changing a source.",
+          "code": null,
+          "check": [],
+          "help": "Check supported SQL execution, registered UC objects, the time range, and BROWSE/object access. A missing edge can be a capture or visibility issue.",
+          "refs": [
+            "lineage"
+          ],
+          "extra": "This demonstrates the local path only. A producer/consumer path across accounts needs both configured environments and separate evidence.",
+          "action": null
+        },
+        {
+          "id": "4-3",
+          "title": "Predict, then introduce one defect",
+          "where": "SQL Editor → synthetic raw table",
+          "do": [
+            "Predict what happens if L001 becomes negative.",
+            "Run the update, then compare the live score with the summary table.",
+            "Leave the temporary change in place only until the next step."
+          ],
+          "look": "The score drops to 58.3%; the stored summary still has the previous VA total of 1260000.",
+          "why": "A stored result can become stale even though a view reflects current data.",
+          "code": "trace_change",
+          "check": [
+            [
+              "pass_pct",
+              58.3
+            ]
+          ],
+          "help": "If the score was already different, return to a clean seed prefix or investigate earlier changes. Do not alter non-lab data.",
+          "refs": [
+            "delta"
+          ],
+          "extra": "The summary is an ordinary Delta table created from a query. It is not a materialized view with an automatic refresh policy.",
+          "action": null
+        },
+        {
+          "id": "4-4",
+          "title": "Repair and prove recovery",
+          "where": "SQL Editor → synthetic raw table",
+          "do": [
+            "Restore L001 and rebuild the summary.",
+            "Check the recovered score and total.",
+            "Record the changed source field, affected assets, and repair evidence."
+          ],
+          "look": "pass_pct = 66.7; accepted_balance = 1715000.",
+          "why": "An impact demonstration is stronger when you can also prove recovery.",
+          "code": "trace_repair",
+          "check": [
+            [
+              "pass_pct",
+              66.7
+            ],
+            [
+              "accepted_balance",
+              1715000
+            ]
+          ],
+          "help": "Run the statements in order. If interrupted, rerun this repair step before moving on.",
+          "refs": [
+            "delta",
+            "lineage"
+          ],
+          "extra": "",
+          "action": null
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Test access with the right identity",
+      "time": "40–60 min",
+      "feature": "Privileges + governed consumption",
+      "win": "An access matrix and a sharing test plan.",
+      "steps": [
+        {
+          "id": "5-1",
+          "title": "Inspect what you can inspect",
+          "where": "Catalog → Permissions / SQL Editor",
+          "do": [
+            "Run the three SHOW GRANTS statements separately.",
+            "Record the hierarchy: catalog, schema, table.",
+            "Keep identities in approved private evidence; use role labels in your summary."
+          ],
+          "look": "Visible grants at each available level, plus any visibility limitation.",
+          "why": "A grant list is evidence about permissions, not a full cloud-security assessment.",
+          "code": "grants",
+          "check": [],
+          "help": "Owners/admins and suitably privileged users see more grants. Other users may see only their own grants; record that scope.",
+          "refs": [
+            "privileges"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "5-2",
+          "title": "Build a limited consumer view",
+          "where": "SQL Editor → new query",
+          "do": [
+            "Create the projection over accepted VA loans.",
+            "Check its rows and columns.",
+            "Explain which fields and records the view exposes."
+          ],
+          "look": "4 rows, with loan_id and state only.",
+          "why": "A consumer view gives you a clear contract to test against.",
+          "code": "projection",
+          "check": [
+            [
+              "visible_rows",
+              4
+            ]
+          ],
+          "help": "This runs as you. It does not prove another user is restricted or remove existing access to the source table.",
+          "refs": [
+            "view"
+          ],
+          "extra": "The view filters everyone to the same subset. It is not a dynamic identity-based row filter or column mask.",
+          "action": null
+        },
+        {
+          "id": "5-3",
+          "title": "Run an assisted allow/deny check",
+          "where": "Approved test identities → supplied workspace",
+          "do": [
+            "Ask the access owner to provide the approved role matrix for the lab view and source.",
+            "Have each approved test identity run SELECT on both objects in its own authorized session.",
+            "Record expected vs observed allow/deny results, object, time, and identity role."
+          ],
+          "look": "Evidence for both the allowed path and the denied path under the intended identities.",
+          "why": "Your owner session cannot validate a less-privileged consumer's access.",
+          "code": null,
+          "check": [],
+          "help": "No approved test identities? Mark this step blocked and retain the proposed matrix. Never treat a mock role switch as an actual permission test.",
+          "refs": [
+            "privileges"
+          ],
+          "extra": "Start with two neutral roles: consumer and restricted reviewer. The access owner decides expected privileges, including inherited grants. This guide supplies no GRANT/REVOKE mutations.",
+          "action": null
+        },
+        {
+          "id": "5-4",
+          "title": "Choose the correct sharing test",
+          "where": "Catalog → sharing area, if available",
+          "do": [
+            "Identify the approved topology: same metastore, different metastores, or an external client.",
+            "Write provider object, recipient type, expected rows/columns, and revoke-test owner.",
+            "If a configured test share exists, compare provider and recipient results with its owner."
+          ],
+          "look": "A scoped sharing plan; actual sharing remains blocked until both sides are exercised.",
+          "why": "Sharing behavior depends on the recipient and topology, not just a visible menu.",
+          "code": null,
+          "check": [],
+          "help": "If no share/recipient is provided, record preparation only. No credentials or invitations are required for the planning exercise.",
+          "refs": [
+            "sharing"
+          ],
+          "extra": "Workspaces on the same metastore can use UC privileges. Cross-metastore or external sharing needs its configured sharing path. A local view does not prove cross-account access, fine-grained sharing, or producer-side lineage.",
+          "action": null
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Reconcile Collibra metadata",
+      "time": "45–65 min",
+      "feature": "Metadata integration + lineage integration",
+      "win": "A source-to-catalog comparison with clear gaps.",
+      "steps": [
+        {
+          "id": "6-1",
+          "title": "Capture a source baseline",
+          "where": "SQL Editor → inventory exports",
+          "do": [
+            "Rerun the one-table inventory and four-column inventory from Day 2.",
+            "Keep both CSVs with their observation time.",
+            "Confirm GOV_A is still present before the change test."
+          ],
+          "look": "One raw-table record and four column records, with names and comments.",
+          "why": "A baseline makes sync completeness and change propagation testable.",
+          "code": "raw_inventory",
+          "check": [
+            [
+              "Raw table rows",
+              1
+            ]
+          ],
+          "help": "If GOV_B is already present from a previous run, rerun Day 2 Step 1 first and coordinate a new baseline sync.",
+          "refs": [
+            "inventory",
+            "columns"
+          ],
+          "extra": "",
+          "action": null
+        },
+        {
+          "id": "6-2",
+          "title": "Validate the inbound asset mapping",
+          "where": "Collibra → approved test integration",
+          "do": [
+            "With the integration owner, confirm the source scope and run/sync identifier.",
+            "Find the raw table and four columns in the approved test catalog.",
+            "Compare names, types, descriptions, parent relations, and mapped owner fields against the CSVs."
+          ],
+          "look": "A recorded match/mismatch for each configured metadata field.",
+          "why": "Finding one table does not prove all attributes and relationships synchronized.",
+          "code": null,
+          "check": [],
+          "help": "No configured connector or Collibra test access? Mark blocked and use the mapping draft as preparation. Do not enter tokens into this guide.",
+          "refs": [
+            "collibra",
+            "collibraAssets"
+          ],
+          "extra": "Compare fields that the actual connector maps; do not assume technical ownership becomes a business responsibility. Distinguish excluded-by-scope, missing, and unsupported fields.",
+          "action": null
+        },
+        {
+          "id": "6-3",
+          "title": "Test a metadata change",
+          "where": "SQL Editor + approved integration run",
+          "do": [
+            "Change the synthetic table comment to GOV_B using this SQL.",
+            "Have the integration owner run the approved inbound sync.",
+            "Check for GOV_B on the same mapped Collibra asset and record the run ID/time."
+          ],
+          "look": "The source has GOV_B; a real integration test also finds GOV_B on the intended target asset.",
+          "why": "A controlled marker tests propagation while keeping the data rows unchanged.",
+          "code": "marker",
+          "check": [],
+          "help": "Without a real sync, record source change only and mark integration blocked. Confirm configured mapping direction and scope before calling an absent comment a defect.",
+          "refs": [
+            "collibra"
+          ],
+          "extra": "Observe actual lag rather than assuming an SLA. Outbound Collibra-to-UC synchronization is a separate configured capability, not automatically proven by this inbound test.",
+          "action": null
+        },
+        {
+          "id": "6-4",
+          "title": "Check lineage independently",
+          "where": "Collibra → technical lineage for the lab asset",
+          "do": [
+            "Confirm that technical-lineage ingestion is configured and a run completed.",
+            "Find the raw-to-summary path and inspect one column mapping.",
+            "Compare it with the UC graph from Day 4; record missing or masked edges separately."
+          ],
+          "look": "Independent evidence for metadata sync and lineage sync.",
+          "why": "Metadata discovery and lineage capture are separate results to validate.",
+          "code": null,
+          "check": [],
+          "help": "No lineage capability? Mark blocked with the required integration role. A successful metadata sync alone does not complete this step.",
+          "refs": [
+            "collibraLineage"
+          ],
+          "extra": "A manual relationship or diagram is preparation; it is not proof of automatically ingested technical lineage.",
+          "action": null
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Build your evidence pack",
+      "time": "40–60 min",
+      "feature": "History + audit + pilot",
+      "win": "A short demo and an honest test summary.",
+      "steps": [
+        {
+          "id": "7-1",
+          "title": "Trace your own lab changes",
+          "where": "SQL Editor → Query History + table history",
+          "do": [
+            "Run DESCRIBE HISTORY on the synthetic table.",
+            "Find a Day 4 UPDATE operation and its time.",
+            "Find a related query execution in Query History; keep approved evidence privately."
+          ],
+          "look": "At least one lab UPDATE in Delta history and a query-history observation.",
+          "why": "Table versions and query executions answer different questions about a change.",
+          "code": "history",
+          "check": [],
+          "help": "Some query details require extra permissions. A failed query or missing history should be recorded explicitly.",
+          "refs": [
+            "delta"
+          ],
+          "extra": "These observations do not establish centralized account-wide logging, retention, or delivery guarantees.",
+          "action": null
+        },
+        {
+          "id": "7-2",
+          "title": "Inspect audit events if authorized",
+          "where": "SQL Editor → optional system table",
+          "do": [
+            "Use this query only with approved system-table access.",
+            "Find your recent activity and examine service/action/time.",
+            "Record an event reference or mark the step blocked if unavailable."
+          ],
+          "look": "Recent events for your identity, or a documented access/availability blocker.",
+          "why": "Centralized audit evidence is broader than a single table's history.",
+          "code": "audit",
+          "check": [],
+          "help": "Ask the audit owner whether the table is enabled and which regional/account coverage and delivery lag apply. An empty result does not prove that logging failed.",
+          "refs": [
+            "audit"
+          ],
+          "extra": "Do not infer complete audit coverage from twenty rows. Validate required event types, retention and export delivery with the audit owner.",
+          "action": null
+        },
+        {
+          "id": "7-3",
+          "title": "Separate practice from validation",
+          "where": "This guide → Evidence log",
+          "do": [
+            "For each theme, choose a status and execution scope.",
+            "Add actual result, private evidence reference, or blocker.",
+            "Only use Passed with evidence for an executed check whose acceptance criteria were met."
+          ],
+          "look": "Each result says whether it was prepared, run locally, or run through the real integration.",
+          "why": "A learning checkmark and a vendor acceptance-test pass mean different things.",
+          "code": null,
+          "check": [],
+          "help": "Use “Prepared only” for worksheets/simulations and “Blocked” for missing access. Add the full private case ID locally when available.",
+          "refs": [],
+          "extra": "Mappings in this public guide are provisional themes. Confirm exact test steps and acceptance criteria against the private export.",
+          "action": "evidence"
+        },
+        {
+          "id": "7-4",
+          "title": "Demonstrate one useful pilot",
+          "where": "SQL Editor + your evidence pack",
+          "do": [
+            "Run the final checks and show the catalog definition, exception report, and lineage.",
+            "Export your evidence pack; explain one observed limit or blocked dependency.",
+            "Choose one approved dataset, one responsible role, and one measurable pilot outcome."
+          ],
+          "look": "66.7% pass rate; 3 summary rows; 8 accepted loans; 1715000 balance; 4 consumer-view rows.",
+          "why": "A small repeatable demonstration is a practical starting point for a team pilot.",
+          "code": "final_check",
+          "check": [
+            [
+              "pass_pct",
+              66.7
+            ],
+            [
+              "accepted_loans",
+              8
+            ],
+            [
+              "consumer_rows",
+              4
+            ]
+          ],
+          "help": "Repair Day 4 first if the score is 58.3. A blocked integration does not invalidate a demonstrated local capability.",
+          "refs": [],
+          "extra": "Example pilot: reconcile the metadata for one approved dataset and ten columns, with every mismatch explained. Agree the target and review date with the owner.",
+          "action": "demo"
+        }
+      ]
+    }
+  ],
+  "features": [
+    [
+      "Asset inventory",
+      "Find registered assets",
+      "Catalog → schema → table/view → column is the address you will reconcile. Visible inventory is limited by scope and permission.",
+      "2-2",
+      "▦"
+    ],
+    [
+      "Quality profiling",
+      "Measure actual contents",
+      "Use counts, null checks, and explicit rules. SQL profiling in this lab does not configure automated monitoring.",
+      "3-1",
+      "◌"
+    ],
+    [
+      "Lineage",
+      "Trace a dependency",
+      "Observe the actual captured table and column graph; record visibility and capture gaps separately.",
+      "4-2",
+      "↗"
+    ],
+    [
+      "Access controls",
+      "Test as the intended role",
+      "Read grants, then compare allow/deny results under approved identities. Your owner session is not a consumer test.",
+      "5-3",
+      "◈"
+    ],
+    [
+      "Sharing",
+      "Validate both sides",
+      "A local view is preparation. A cross-account or external sharing test needs a configured provider and recipient.",
+      "5-4",
+      "⇄"
+    ],
+    [
+      "Collibra metadata",
+      "Reconcile discovered assets",
+      "Compare expected fields and relationships after a real inbound run. The downloadable draft is not a connector.",
+      "6-2",
+      "≋"
+    ],
+    [
+      "Collibra lineage",
+      "Verify a separate result",
+      "Confirm a lineage capability and run; compare actual edges with the Databricks graph.",
+      "6-4",
+      "⌁"
+    ],
+    [
+      "Audit",
+      "Collect the right evidence",
+      "Query history, Delta history, and audit logs have different scopes. Record which source supports your finding.",
+      "7-2",
+      "◎"
+    ]
+  ],
+  "themes": [
+    {
+      "id": "assets",
+      "name": "Asset inventory & model",
+      "day": 2,
+      "scope": "Sandbox executed",
+      "criteria": "Raw table and four columns match the agreed asset structure, types, definitions and parent relationships."
+    },
+    {
+      "id": "quality",
+      "name": "Profiling & exception reporting",
+      "day": 3,
+      "scope": "Sandbox executed",
+      "criteria": "12 assessed, 8 accepted, 4 explained exceptions, and 66.7% under the stated sample rules."
+    },
+    {
+      "id": "lineage",
+      "name": "Local table & column lineage",
+      "day": 4,
+      "scope": "Sandbox executed",
+      "criteria": "Actual captured upstream dependency and column finding retained; missing/masked edges are explained."
+    },
+    {
+      "id": "access",
+      "name": "Least-privilege consumption",
+      "day": 5,
+      "scope": "Integration executed",
+      "criteria": "Approved identities produce the expected allowed and denied results on source and consumer objects."
+    },
+    {
+      "id": "sharing",
+      "name": "Cross-boundary sharing & lineage",
+      "day": 5,
+      "scope": "Integration executed",
+      "criteria": "Approved provider and recipient demonstrate the requested data scope, access behavior and lineage; exact private case criteria apply."
+    },
+    {
+      "id": "metadata",
+      "name": "Collibra metadata integration",
+      "day": 6,
+      "scope": "Integration executed",
+      "criteria": "A real run maps the intended table/columns and required fields; GOV_A→GOV_B reaches the same target asset as configured."
+    },
+    {
+      "id": "collibra-lineage",
+      "name": "Collibra technical lineage",
+      "day": 6,
+      "scope": "Integration executed",
+      "criteria": "A real lineage run produces the expected source-to-target and column observations, with gaps recorded."
+    },
+    {
+      "id": "audit",
+      "name": "Centralized audit evidence",
+      "day": 7,
+      "scope": "Integration executed",
+      "criteria": "The required event types, scope, retention and delivery are verified against the actual private case, with an audit-owner review."
+    }
+  ],
+  "alignment": [
+    [
+      "Core practice",
+      "Inventory, asset model, profiling, local lineage",
+      "Days 1–4"
+    ],
+    [
+      "Assisted validation",
+      "Role access, sharing, Collibra sync, central audit",
+      "Days 5–7"
+    ],
+    [
+      "Later or specialist-owned",
+      "Disaster recovery, networking, identity lifecycle, materialized-view sharing, unfamiliar integrations",
+      "Confirm relevance and owner privately"
+    ]
+  ]
+}
