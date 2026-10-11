@@ -1,0 +1,821 @@
+{
+  "days": [
+    {
+      "id": 1,
+      "title": "Make the sandbox yours",
+      "time": "45–60 min",
+      "feature": "SQL warehouse + Delta table",
+      "win": "A table you created and can find again.",
+      "steps": [
+        {
+          "id": "1-1",
+          "title": "Run your first query",
+          "where": "Databricks → SQL → SQL editor",
+          "do": [
+            "Create a query. Select your vendor-approved SQL warehouse near the top.",
+            "Copy and run this SQL. Run statements individually if needed to inspect each result.",
+            "Choose an approved sandbox catalog from the list; avoid hive_metastore for this guide."
+          ],
+          "look": "Your user name and at least one approved catalog.",
+          "why": "The editor is where you write; the warehouse is what runs the SQL.",
+          "code": "connect",
+          "check": [],
+          "help": "No warehouse? Ask for CAN USE on an approved SQL warehouse. No catalog? Ask the sandbox owner for the approved Unity Catalog location.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "sql"
+          ]
+        },
+        {
+          "id": "1-2",
+          "title": "Choose where your practice lives",
+          "where": "This guide → Sandbox settings",
+          "do": [
+            "Enter your approved catalog and personal schema in Sandbox settings.",
+            "Already given a writable schema? Select “Use existing schema.” In a shared schema, choose a unique table prefix.",
+            "Save settings. Run the SQL below only if you are creating your own schema."
+          ],
+          "look": "Your chosen schema appears under its catalog.",
+          "why": "Catalog → schema → table is an address, like folders inside folders.",
+          "code": "schema",
+          "check": [],
+          "help": "CREATE SCHEMA needs permission on the catalog. Otherwise use a writable schema supplied by the owner. Managed storage must already be configured.",
+          "extra": "",
+          "action": "settings",
+          "refs": [
+            "schema",
+            "table"
+          ]
+        },
+        {
+          "id": "1-3",
+          "title": "Create 12 fake loans",
+          "where": "SQL editor → new query",
+          "do": [
+            "Run this block in your chosen lab namespace.",
+            "The four deliberate defects are part of the exercise.",
+            "Save the query as “Week 1 — seed loans.”"
+          ],
+          "look": "rows_created = 12.",
+          "why": "A Delta table stores records so they survive closing a query.",
+          "code": "seed",
+          "check": [
+            [
+              "rows_created",
+              12
+            ]
+          ],
+          "help": "IF NOT EXISTS does not reseed an existing table. If it contains different data, choose a fresh personal schema or prefix. Do not overwrite an unfamiliar table.",
+          "extra": "Synthetic data only; no customer data or cloud credentials needed.",
+          "action": null,
+          "refs": [
+            "delta"
+          ]
+        },
+        {
+          "id": "1-4",
+          "title": "Find your table again",
+          "where": "Databricks → Catalog",
+          "do": [
+            "Expand your catalog and schema; open the raw-loans table.",
+            "Inspect its columns and Sample Data. Or run the query below.",
+            "Find L009 through L012. Tomorrow you will investigate them."
+          ],
+          "look": "12 rows; columns loan_id, balance, state and status.",
+          "why": "Catalog Explorer maps registered assets; it is not a scan of every S3 file.",
+          "code": "browse",
+          "check": [],
+          "help": "Refresh the tree and search the full table name. A missing result can mean wrong scope or missing access.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "table"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Find the four defects",
+      "time": "40–50 min",
+      "feature": "SQL profiling",
+      "win": "A short profile with numbers you can defend.",
+      "steps": [
+        {
+          "id": "2-1",
+          "title": "Count what is there",
+          "where": "SQL editor",
+          "do": [
+            "Run this profile on your raw table.",
+            "Compare total_rows with balances_present. Which row explains the difference?"
+          ],
+          "look": "12 rows · 12 unique loans · 11 balances present · 1 missing balance.",
+          "why": "COUNT(*) counts rows; COUNT(balance) skips null balances.",
+          "code": "profile",
+          "check": [
+            [
+              "total_rows",
+              12
+            ],
+            [
+              "missing_balances",
+              1
+            ]
+          ],
+          "help": "If counts differ, check the table name and whether the Day 7 mutation has already been applied.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "sql"
+          ]
+        },
+        {
+          "id": "2-2",
+          "title": "Pull the exception list",
+          "where": "SQL editor",
+          "do": [
+            "Run the filter and inspect each returned row.",
+            "Lab rules: balance is present and nonnegative; state is VA/FL/NJ; status is Current/Delinquent/Paid."
+          ],
+          "look": "L009: null · L010: negative · L011: ZZ · L012: Unknown.",
+          "why": "A rule makes “bad data” specific and testable.",
+          "code": "findbad",
+          "check": [
+            [
+              "exception_rows",
+              4
+            ]
+          ],
+          "help": "Check the source table and the exact filters.",
+          "extra": "These are sample rules for this portfolio, not universal lending rules.",
+          "action": null,
+          "refs": [
+            "sql"
+          ]
+        },
+        {
+          "id": "2-3",
+          "title": "Group the data",
+          "where": "SQL editor → results",
+          "do": [
+            "Run the grouped query and save it as “Week 1 — state profile.”",
+            "If chart controls are available, add a bar chart: state on X, loan_count on Y."
+          ],
+          "look": "VA 5 · FL 3 · NJ 3 · ZZ 1.",
+          "why": "Grouping exposes unexpected categories quickly.",
+          "code": "group",
+          "check": [],
+          "help": "A result table is enough. Editor chart controls vary; Day 5 covers dashboards.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "sql"
+          ]
+        },
+        {
+          "id": "2-4",
+          "title": "Explain the result in one sentence",
+          "where": "Your saved queries",
+          "do": [
+            "Reopen your saved profile and exception query.",
+            "Say: “Four of twelve loans fail at least one of these three checks.”",
+            "Name one thing you have not checked, such as source completeness."
+          ],
+          "look": "You can find the queries and explain their scope.",
+          "why": "A result needs a denominator and a boundary.",
+          "code": null,
+          "check": [],
+          "help": "Return to the previous two queries and count the rows.",
+          "extra": "No essay required. Your saved queries are the evidence.",
+          "action": null,
+          "refs": []
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Build reusable views",
+      "time": "45–60 min",
+      "feature": "Views + a quality scorecard",
+      "win": "Accepted loans, exceptions and a reusable score.",
+      "steps": [
+        {
+          "id": "3-1",
+          "title": "Give each row a result",
+          "where": "SQL editor",
+          "do": [
+            "Create the checked view, then run its SELECT.",
+            "Find the eight PASS rows and four failure reasons."
+          ],
+          "look": "8 PASS rows; 4 exceptions.",
+          "why": "A view saves a query; it does not copy the data.",
+          "code": "checked",
+          "check": [
+            [
+              "pass_rows",
+              8
+            ]
+          ],
+          "help": "Run Day 1 first and verify the same catalog, schema and prefix.",
+          "extra": "The CASE reports the first failure per row. This is custom SQL, not managed quality monitoring.",
+          "action": null,
+          "refs": [
+            "view"
+          ]
+        },
+        {
+          "id": "3-2",
+          "title": "Separate usable rows and exceptions",
+          "where": "SQL editor",
+          "do": [
+            "Create the accepted and exception views.",
+            "Run the combined count query. Keep exceptions available for investigation."
+          ],
+          "look": "accepted = 8; exceptions = 4.",
+          "why": "Different consumers need different views of the checked data.",
+          "code": "split",
+          "check": [
+            [
+              "accepted",
+              8
+            ],
+            [
+              "exceptions",
+              4
+            ]
+          ],
+          "help": "Create the checked view in the previous step first.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "view"
+          ]
+        },
+        {
+          "id": "3-3",
+          "title": "Create one shared score",
+          "where": "SQL editor",
+          "do": [
+            "Run the scorecard definition.",
+            "Read pass_pct as 8 ÷ 12 × 100, rounded to one decimal."
+          ],
+          "look": "12 assessed · 8 accepted · 4 rejected · 66.7 pass_pct.",
+          "why": "A shared calculation keeps dashboards on the same denominator.",
+          "code": "score",
+          "check": [
+            [
+              "pass_pct",
+              66.7
+            ]
+          ],
+          "help": "If the score differs, inspect the checked view before changing the formula.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "view"
+          ]
+        },
+        {
+          "id": "3-4",
+          "title": "Check a business number",
+          "where": "SQL editor",
+          "do": [
+            "Sum balances from accepted loans only.",
+            "Explain why summing the raw table would answer a different question."
+          ],
+          "look": "accepted_balance = 1,715,000.",
+          "why": "The population behind a metric matters as much as the SQL.",
+          "code": "balance",
+          "check": [
+            [
+              "accepted_balance",
+              1715000
+            ]
+          ],
+          "help": "Confirm you queried the accepted view, not the raw table.",
+          "extra": "",
+          "action": null,
+          "refs": []
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Use the catalog like a steward",
+      "time": "45–60 min",
+      "feature": "Comments, inventory + lineage",
+      "win": "A documented asset and a Collibra mapping draft.",
+      "steps": [
+        {
+          "id": "4-1",
+          "title": "Document the table and a column",
+          "where": "SQL editor → Catalog",
+          "do": [
+            "Run these comments on your raw table.",
+            "Refresh Catalog Explorer; read the description and balance column comment."
+          ],
+          "look": "Both descriptions appear with the asset.",
+          "why": "Descriptions explain meaning where people use the data.",
+          "code": "comment",
+          "check": [],
+          "help": "Use the SQL warehouse. Commenting on the table requires MODIFY; you should have it on the table you own.",
+          "extra": "A comment neither masks data nor approves an enterprise glossary term.",
+          "action": null,
+          "refs": [
+            "comment"
+          ]
+        },
+        {
+          "id": "4-2",
+          "title": "List your registered assets",
+          "where": "SQL editor",
+          "do": [
+            "Run this metadata query.",
+            "Find the raw table and four views; inspect their types and owners."
+          ],
+          "look": "5 lab assets: 1 table + 4 views.",
+          "why": "Information schema turns catalog metadata into a report.",
+          "code": "inventory",
+          "check": [
+            [
+              "lab_assets",
+              5
+            ]
+          ],
+          "help": "Results are privilege-filtered. They do not inventory all S3 files or all company datasets.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "inventory"
+          ]
+        },
+        {
+          "id": "4-3",
+          "title": "Follow the score upstream",
+          "where": "Catalog → scorecard → Lineage",
+          "do": [
+            "Run the scorecard SELECT below to exercise the dependency.",
+            "Open Lineage, then expand the graph toward the checked view and raw table.",
+            "Inspect an edge or column if available."
+          ],
+          "look": "Raw table → checked view → scorecard.",
+          "why": "Lineage helps trace a result and assess a change.",
+          "code": "dashboard_score",
+          "check": [],
+          "help": "Refresh, allow a capture delay and widen the time range. Unity Catalog and suitable permissions are required. Mark blocked if unavailable; SQL definitions still show intended dependencies.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "lineage"
+          ]
+        },
+        {
+          "id": "4-4",
+          "title": "Make the Collibra connection",
+          "where": "This guide → mapping draft",
+          "do": [
+            "Download the draft mapping for the balance column.",
+            "Review the technical name, proposed term, definition and draft status.",
+            "Identify who would approve that term in your team."
+          ],
+          "look": "One technical column mapped to a proposed business definition.",
+          "why": "Technical evidence supports your governance approval process.",
+          "code": null,
+          "check": [],
+          "help": "This is a draft CSV. It does not connect to or change Collibra.",
+          "extra": "Validate the company connector and which system owns each attribute before syncing.",
+          "action": "mapping",
+          "refs": [
+            "collibra"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Build a dashboard",
+      "time": "45–60 min",
+      "feature": "AI/BI Dashboards",
+      "win": "A quality score with the rows behind it.",
+      "steps": [
+        {
+          "id": "5-1",
+          "title": "Add a scorecard dataset",
+          "where": "Databricks → Dashboards → Create dashboard",
+          "do": [
+            "Name it “Week 1 — Loan quality”; select your approved SQL warehouse.",
+            "Open Data, create a dataset from SQL, and paste this query.",
+            "Run it and name the dataset “Quality summary.”"
+          ],
+          "look": "One row: 12 assessed, 8 accepted, 4 rejected, 66.7 pass_pct.",
+          "why": "Dashboard datasets supply the results used by widgets.",
+          "code": "dashboard_score",
+          "check": [],
+          "help": "Look for Create from SQL or a dataset editor; labels vary. If Dashboards is unavailable, keep the saved query and mark blocked.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "dashboard"
+          ]
+        },
+        {
+          "id": "5-2",
+          "title": "Make a clear headline",
+          "where": "Dashboard → Canvas",
+          "do": [
+            "Add a counter using Quality summary; select pass_pct.",
+            "Title it “Loans passing checks (%)” and show one decimal.",
+            "Optionally add a second counter for rejected."
+          ],
+          "look": "The headline reads 66.7.",
+          "why": "SQL already multiplied by 100. Use a regular number format.",
+          "code": null,
+          "check": [],
+          "help": "If a percent formatter shows 6,670%, switch to number formatting. A simple table showing pass_pct also works.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "dashboard"
+          ]
+        },
+        {
+          "id": "5-3",
+          "title": "Show the exceptions",
+          "where": "Dashboard → Data, then Canvas",
+          "do": [
+            "Add this second SQL dataset.",
+            "Create a table widget with loan_id, quality_result, balance and state.",
+            "Keep your personal dashboard as a draft for this exercise."
+          ],
+          "look": "4 exception rows, each with a reason.",
+          "why": "The score invites a question; the rows give someone an action.",
+          "code": "dashboard_exceptions",
+          "check": [],
+          "help": "Verify that the widget uses the exception dataset, not Quality summary.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "dashboard"
+          ]
+        },
+        {
+          "id": "5-4",
+          "title": "Test the numbers",
+          "where": "Dashboard → run / refresh datasets",
+          "do": [
+            "Refresh both datasets and compare them with your SQL results.",
+            "Open each dataset and point to its source view.",
+            "Leave publishing and sharing for an approved team review later."
+          ],
+          "look": "Every displayed number agrees with its query.",
+          "why": "Saved layout, refreshed data and shared access are separate concerns.",
+          "code": null,
+          "check": [],
+          "help": "Rerun the dataset, verify its query and warehouse, then inspect the visual’s aggregation and filters.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "dashboard"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Make a repeatable refresh",
+      "time": "50–70 min",
+      "feature": "Lakeflow Jobs + a snapshot",
+      "win": "Two successful runs and a one-row snapshot.",
+      "steps": [
+        {
+          "id": "6-1",
+          "title": "Save a snapshot query",
+          "where": "SQL editor",
+          "do": [
+            "Run this once and save it as “Week 1 — capture quality.”",
+            "Find the new snapshot table in Catalog."
+          ],
+          "look": "A stored quality result with captured_at.",
+          "why": "A table stores a result; an ordinary view computes it when queried.",
+          "code": "snapshot",
+          "check": [],
+          "help": "The source scorecard view must exist first.",
+          "extra": "This replaces only your named lab snapshot. It keeps the latest result, not daily history.",
+          "action": null,
+          "refs": [
+            "delta"
+          ]
+        },
+        {
+          "id": "6-2",
+          "title": "Run it as a job",
+          "where": "Jobs & Pipelines → Create job",
+          "do": [
+            "Add a SQL task; choose Query and your saved snapshot query.",
+            "Use an approved pro or serverless SQL warehouse. Check the run-as identity’s access.",
+            "Save, click Run now, and open the task details. Leave scheduling off."
+          ],
+          "look": "The SQL task finishes successfully.",
+          "why": "Jobs add controlled execution and a record of each run.",
+          "code": null,
+          "check": [],
+          "help": "SQL tasks need pro/serverless SQL compute and permissions. If blocked, run the query manually, mark this step blocked, and continue. Manual execution is not a job demonstration.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "jobs"
+          ]
+        },
+        {
+          "id": "6-3",
+          "title": "Check a second run",
+          "where": "Job → Run now, then SQL editor",
+          "do": [
+            "Run the job again, or rerun the saved query if job access was blocked.",
+            "Inspect captured_at and count the stored rows."
+          ],
+          "look": "1 snapshot row; pass_pct 66.7; a later captured_at.",
+          "why": "Replacing a snapshot can be rerun without appending duplicates.",
+          "code": "snapshot_check",
+          "check": [
+            [
+              "snapshot_rows",
+              1
+            ]
+          ],
+          "help": "Check task status and refresh the SELECT. A failed job does not update captured_at.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "jobs"
+          ]
+        },
+        {
+          "id": "6-4",
+          "title": "Explore the controls",
+          "where": "Job → Runs and schedule settings",
+          "do": [
+            "Inspect duration, task status and both run records.",
+            "Find schedule, time-zone and pause controls. Leave scheduling off.",
+            "Say who would investigate a failed refresh in your team."
+          ],
+          "look": "You can find runs and describe the next action after a failure.",
+          "why": "Automation needs an owner as well as a schedule.",
+          "code": null,
+          "check": [],
+          "help": "If Jobs is unavailable, mark blocked and keep the manual refresh. Ask the owner about the approved capability.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "jobs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Break it, trace it, fix it",
+      "time": "50–70 min",
+      "feature": "A small incident you can explain",
+      "win": "A three-minute working demo for your team.",
+      "steps": [
+        {
+          "id": "7-1",
+          "title": "Predict one bad update",
+          "where": "This guide → prediction",
+          "do": [
+            "Start with the original 8 passing loans out of 12.",
+            "If one passing loan becomes invalid, what will pass_pct be?"
+          ],
+          "look": "7 ÷ 12 × 100 = 58.3%, rounded.",
+          "why": "Predicting the output tests your understanding before execution.",
+          "code": null,
+          "check": [
+            [
+              "predicted_pass_pct",
+              58.3
+            ]
+          ],
+          "help": "You still have 12 loans; only the number passing decreases.",
+          "extra": "If already changed, restore L001 to 250000 and recapture the snapshot at 66.7 before starting.",
+          "action": null,
+          "refs": []
+        },
+        {
+          "id": "7-2",
+          "title": "Break one synthetic loan",
+          "where": "SQL editor",
+          "do": [
+            "Run this update to the lab’s L001.",
+            "Compare the live score with the stored snapshot; do not refresh the snapshot yet.",
+            "Refresh dashboard datasets and find the fifth exception."
+          ],
+          "look": "Live: 7 accepted, 5 rejected, 58.3%. Snapshot: its earlier score.",
+          "why": "A live view and a stored snapshot can disagree until a refresh.",
+          "code": "break",
+          "check": [
+            [
+              "accepted",
+              7
+            ],
+            [
+              "rejected",
+              5
+            ],
+            [
+              "pass_pct",
+              58.3
+            ]
+          ],
+          "help": "Snapshot missing? Finish Day 6. Already 58.3? Check whether a manual run or schedule refreshed it.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "delta"
+          ]
+        },
+        {
+          "id": "7-3",
+          "title": "Refresh the stored result",
+          "where": "Job → Run now; then SQL editor",
+          "do": [
+            "Run the snapshot job; use the saved capture query if Jobs was blocked.",
+            "Read the snapshot again and compare with the live score."
+          ],
+          "look": "Snapshot now shows 58.3 and a later captured_at.",
+          "why": "Check a successful run against its output, not only its status.",
+          "code": "snapshot_check",
+          "check": [
+            [
+              "snapshot_pass_pct",
+              58.3
+            ]
+          ],
+          "help": "Verify the job ran the capture query against the same namespace.",
+          "extra": "",
+          "action": null,
+          "refs": [
+            "jobs"
+          ]
+        },
+        {
+          "id": "7-4",
+          "title": "Repair it and show your work",
+          "where": "SQL editor → dashboard → run history",
+          "do": [
+            "Restore L001 with this SQL; rerun snapshot capture and refresh the dashboard.",
+            "Demo: 12 rows → 4 exceptions → 66.7% → catalog description → refresh run.",
+            "Download the demo card. Choose one approved team dataset for a later pilot."
+          ],
+          "look": "Live score and refreshed snapshot return to 66.7%.",
+          "why": "You can now navigate, explain, operate and improve a small workflow.",
+          "code": "repair",
+          "check": [
+            [
+              "restored_pass_pct",
+              66.7
+            ]
+          ],
+          "help": "The repair changes the raw table. Rerun the job or saved capture query separately to refresh the snapshot.",
+          "extra": "Next: a reviewed team pilot. Wider expertise and certification require more varied practice.",
+          "action": "demo",
+          "refs": [
+            "history"
+          ]
+        }
+      ]
+    }
+  ],
+  "sql": {
+    "connect": "SELECT current_user() AS learner, current_catalog() AS catalog, current_schema() AS schema;\nSHOW CATALOGS;",
+    "schema": "CREATE SCHEMA IF NOT EXISTS {{NS}};",
+    "seed": "CREATE TABLE IF NOT EXISTS {{RAW}}\nUSING DELTA AS\nSELECT CAST(loan_id AS STRING) AS loan_id,\n       CAST(balance AS DECIMAL(12,2)) AS balance,\n       CAST(state AS STRING) AS state,\n       CAST(status AS STRING) AS status\nFROM VALUES\n ('L001',250000,'VA','Current'),\n ('L002',180000,'FL','Current'),\n ('L003',300000,'VA','Delinquent'),\n ('L004',125000,'NJ','Current'),\n ('L005',0,'NJ','Paid'),\n ('L006',150000,'FL','Current'),\n ('L007',210000,'VA','Delinquent'),\n ('L008',500000,'VA','Current'),\n ('L009',NULL,'VA','Current'),\n ('L010',-500,'FL','Current'),\n ('L011',100000,'ZZ','Current'),\n ('L012',75000,'NJ','Unknown')\nAS v(loan_id,balance,state,status);\n\nSELECT COUNT(*) AS rows_created FROM {{RAW}};",
+    "browse": "SELECT * FROM {{RAW}} ORDER BY loan_id;",
+    "profile": "SELECT COUNT(*) AS total_rows,\n       COUNT(DISTINCT loan_id) AS unique_loans,\n       COUNT(balance) AS balances_present,\n       SUM(CASE WHEN balance IS NULL THEN 1 ELSE 0 END) AS missing_balances\nFROM {{RAW}};",
+    "findbad": "SELECT * FROM {{RAW}}\nWHERE balance IS NULL OR balance < 0\n   OR state IS NULL OR state NOT IN ('VA','FL','NJ')\n   OR status IS NULL OR status NOT IN ('Current','Delinquent','Paid')\nORDER BY loan_id;",
+    "group": "SELECT state, COUNT(*) AS loan_count FROM {{RAW}}\nGROUP BY state ORDER BY loan_count DESC, state;",
+    "checked": "CREATE OR REPLACE VIEW {{CHECKED}} AS\nSELECT *,\n  CASE\n    WHEN balance IS NULL THEN 'Missing balance'\n    WHEN balance < 0 THEN 'Negative balance'\n    WHEN state IS NULL OR state NOT IN ('VA','FL','NJ') THEN 'Invalid state'\n    WHEN status IS NULL OR status NOT IN ('Current','Delinquent','Paid') THEN 'Invalid status'\n    ELSE 'PASS'\n  END AS quality_result\nFROM {{RAW}};\n\nSELECT loan_id, quality_result FROM {{CHECKED}} ORDER BY loan_id;",
+    "split": "CREATE OR REPLACE VIEW {{ACCEPTED}} AS\nSELECT loan_id, balance, state, status FROM {{CHECKED}}\nWHERE quality_result = 'PASS';\n\nCREATE OR REPLACE VIEW {{EXCEPTIONS}} AS\nSELECT * FROM {{CHECKED}} WHERE quality_result <> 'PASS';\n\nSELECT 'accepted' AS result, COUNT(*) AS row_count FROM {{ACCEPTED}}\nUNION ALL\nSELECT 'exceptions', COUNT(*) FROM {{EXCEPTIONS}};",
+    "score": "CREATE OR REPLACE VIEW {{SCORE}} AS\nSELECT COUNT(*) AS assessed,\n       SUM(CASE WHEN quality_result = 'PASS' THEN 1 ELSE 0 END) AS accepted,\n       SUM(CASE WHEN quality_result <> 'PASS' THEN 1 ELSE 0 END) AS rejected,\n       ROUND(100.0 * SUM(CASE WHEN quality_result = 'PASS' THEN 1 ELSE 0 END)\n             / NULLIF(COUNT(*), 0), 1) AS pass_pct\nFROM {{CHECKED}};\n\nSELECT * FROM {{SCORE}};",
+    "balance": "SELECT SUM(balance) AS accepted_balance FROM {{ACCEPTED}};",
+    "comment": "COMMENT ON TABLE {{RAW}}\nIS 'Synthetic learning data. One row per loan. Not a production data source.';\n\nCOMMENT ON COLUMN {{RAW}}.balance\nIS 'Outstanding principal in USD for this exercise. Must be present and nonnegative.';",
+    "inventory": "SELECT table_name, table_type, table_owner, comment\nFROM {{CAT}}.information_schema.tables\nWHERE LOWER(table_schema) = LOWER('{{SCHEMA_TEXT}}')\n  AND LOWER(table_name) IN ({{TABLE_NAMES}})\nORDER BY table_name;",
+    "dashboard_score": "SELECT assessed, accepted, rejected, pass_pct FROM {{SCORE}};",
+    "dashboard_exceptions": "SELECT loan_id, balance, state, status, quality_result\nFROM {{EXCEPTIONS}} ORDER BY loan_id;",
+    "snapshot": "CREATE OR REPLACE TABLE {{SNAPSHOT}}\nUSING DELTA AS\nSELECT current_timestamp() AS captured_at, * FROM {{SCORE}};",
+    "snapshot_check": "SELECT * FROM {{SNAPSHOT}};\nSELECT COUNT(*) AS snapshot_rows FROM {{SNAPSHOT}};",
+    "break": "-- Only change the synthetic loan created by this guide.\nUPDATE {{RAW}} SET balance = -100 WHERE loan_id = 'L001';\nSELECT * FROM {{SCORE}};\nSELECT * FROM {{SNAPSHOT}};",
+    "repair": "UPDATE {{RAW}} SET balance = 250000 WHERE loan_id = 'L001';\nSELECT * FROM {{SCORE}};",
+    "history": "DESCRIBE HISTORY {{RAW}};"
+  },
+  "sources": {
+    "sql": [
+      "SQL editor",
+      "https://docs.databricks.com/aws/en/sql/user/sql-editor/write-queries"
+    ],
+    "table": [
+      "Table creation and privileges",
+      "https://docs.databricks.com/aws/en/getting-started/create-table"
+    ],
+    "schema": [
+      "Create a schema",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-schema"
+    ],
+    "delta": [
+      "Create a Delta table",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-table-using"
+    ],
+    "view": [
+      "Create a view",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-create-view"
+    ],
+    "comment": [
+      "Table and column comments",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-ddl-comment"
+    ],
+    "lineage": [
+      "Unity Catalog lineage",
+      "https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-lineage"
+    ],
+    "dashboard": [
+      "Create a dashboard",
+      "https://docs.databricks.com/aws/en/dashboards/tutorials/create-dashboard"
+    ],
+    "jobs": [
+      "SQL tasks in Jobs",
+      "https://docs.databricks.com/aws/en/jobs/tasks/sql"
+    ],
+    "inventory": [
+      "Information schema",
+      "https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-information-schema"
+    ],
+    "history": [
+      "Table history",
+      "https://docs.databricks.com/aws/en/tables/history"
+    ],
+    "collibra": [
+      "Collibra and Unity Catalog",
+      "https://productresources.collibra.com/docs/collibra/latest/Content/Catalog/Databricks/co_about-databricks-integration.htm"
+    ]
+  },
+  "checked": "11 October 2026",
+  "features": [
+    [
+      "Catalog / Unity Catalog",
+      "Find and govern assets",
+      "Inspect columns, descriptions, owners, access and lineage. It does not automatically inventory every unregistered S3 file.",
+      "4-1",
+      "◇"
+    ],
+    [
+      "SQL warehouse",
+      "Execute your queries",
+      "Compute that runs SQL. Use an approved warehouse with suitable permissions; running compute can incur cost.",
+      "1-1",
+      "⚡"
+    ],
+    [
+      "Delta table",
+      "Store your data",
+      "Keeps records and transaction history. History is not a substitute for backups or retained data files.",
+      "1-3",
+      "▤"
+    ],
+    [
+      "View",
+      "Reuse a query",
+      "A named SELECT over other data. An ordinary view does not store a refreshed copy.",
+      "3-1",
+      "◫"
+    ],
+    [
+      "SQL editor",
+      "Investigate data",
+      "Write, run and save queries. Correct syntax still needs the right business rule and denominator.",
+      "2-1",
+      "⌘"
+    ],
+    [
+      "Dashboards",
+      "Communicate results",
+      "Build visuals over query results. Data refresh and sharing access are separate choices.",
+      "5-1",
+      "▥"
+    ],
+    [
+      "Lakeflow Jobs",
+      "Repeat work reliably",
+      "Runs tasks and records outcomes. Check the resulting data as well as the green task status.",
+      "6-2",
+      "↻"
+    ],
+    [
+      "Collibra + Databricks",
+      "Join meaning to evidence",
+      "Use the approved integration and agreed attribute ownership. This week produces a mapping draft only.",
+      "4-4",
+      "⇄"
+    ]
+  ]
+}
